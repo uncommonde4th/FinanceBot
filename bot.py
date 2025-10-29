@@ -76,8 +76,32 @@ def create_profile_keyboard():
     markup = types.InlineKeyboardMarkup(row_width=2)
     btn_add_credit = types.InlineKeyboardButton('💳 Добавить кредит', callback_data='add_credit')
     btn_make_payment = types.InlineKeyboardButton('💰 Платеж по кредиту', callback_data='make_payment')
+    btn_edit = types.InlineKeyboardButton('✏️ Изменить', callback_data='edit_menu')
     btn_add_investment = types.InlineKeyboardButton('📈 Добавить вклад', callback_data='add_investment')
-    markup.add(btn_add_credit, btn_make_payment, btn_add_investment)
+    markup.add(btn_add_credit, btn_make_payment, btn_edit, btn_add_investment)
+    return markup
+
+def create_edit_menu_keyboard():
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    btn_delete_credit = types.InlineKeyboardButton('🗑️ Удалить кредит', callback_data='delete_credit_menu')
+    btn_delete_investment = types.InlineKeyboardButton('🗑️ Удалить вклад', callback_data='delete_investment_menu')
+    btn_back = types.InlineKeyboardButton('🔙 Назад к профилю', callback_data='back_to_profile')
+    markup.add(btn_delete_credit, btn_delete_investment, btn_back)
+    return markup
+
+def create_delete_credits_keyboard(user_id):
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    user_credits = db.get_user_credits(user_id)
+    
+    for credit in user_credits:
+        credit_id, _, debt, current_debt, rate, months, months_paid, monthly_pay, _, _, created_at = credit
+        btn_text = f"💳 {debt:,.0f}₽ под {rate}% ({current_debt:,.0f}₽ осталось)"
+        markup.add(types.InlineKeyboardButton(btn_text, callback_data=f'delete_credit_{credit_id}'))
+    
+    if not user_credits:
+        markup.add(types.InlineKeyboardButton('❌ Нет кредитов для удаления', callback_data='no_credits'))
+    
+    markup.add(types.InlineKeyboardButton('🔙 Назад', callback_data='back_to_edit_menu'))
     return markup
 
 # Функция для создания клавиатуры выбора кредита
@@ -254,12 +278,74 @@ def handle_callback(call):
         else:
             bot.answer_callback_query(call.id, "❌ Кредит не найден!")
             
+    elif call.data == 'edit_menu':
+        # Меню редактирования
+        text = "✏️ *Что вы хотите изменить?*"
+        keyboard = create_edit_menu_keyboard()
+        bot.edit_message_text(
+            chat_id=chat_id,
+            message_id=message_id,
+            text=text,
+            parse_mode='Markdown',
+            reply_markup=keyboard
+        )
+        
+    elif call.data == 'delete_credit_menu':
+        # Выбор кредита для удаления
+        user_credits = db.get_user_credits(user_id)
+        if not user_credits:
+            bot.answer_callback_query(call.id, "❌ У вас нет кредитов для удаления!")
+            return
+            
+        text = "🗑️ *Выберите кредит для удаления:*"
+        keyboard = create_delete_credits_keyboard(user_id)
+        bot.edit_message_text(
+            chat_id=chat_id,
+            message_id=message_id,
+            text=text,
+            parse_mode='Markdown',
+            reply_markup=keyboard
+        )
+        
+    elif call.data.startswith('delete_credit_'):
+        # Удаление выбранного кредита
+        credit_id = int(call.data.split('_')[2])
+        credit = db.get_credit_by_id(credit_id, user_id)
+        
+        if credit:
+            success = db.delete_credit(credit_id, user_id)
+            if success:
+                bot.answer_callback_query(call.id, "✅ Кредит успешно удален!")
+                show_user_profile(chat_id, user_id, message_id)
+            else:
+                bot.answer_callback_query(call.id, "❌ Ошибка при удалении кредита!")
+        else:
+            bot.answer_callback_query(call.id, "❌ Кредит не найден!")
+            
+    elif call.data == 'delete_investment_menu':
+        # Заглушка для вкладов
+        bot.answer_callback_query(call.id, "💰 Функция удаления вкладов скоро будет доступна!")
+        
+    elif call.data == 'back_to_edit_menu':
+        # Возврат в меню редактирования
+        text = "✏️ *Что вы хотите изменить?*"
+        keyboard = create_edit_menu_keyboard()
+        bot.edit_message_text(
+            chat_id=chat_id,
+            message_id=message_id,
+            text=text,
+            parse_mode='Markdown',
+            reply_markup=keyboard
+        )
+        
     elif call.data == 'back_to_profile':
         show_user_profile(chat_id, user_id, message_id)
         
     elif call.data == 'add_investment':
         bot.answer_callback_query(call.id, "📈 Функция вкладов скоро будет доступна!")
-
+        
+    elif call.data == 'no_credits':
+        bot.answer_callback_query(call.id, "❌ Нет доступных кредитов!")
 # Обработчик ввода суммы платежа
 @bot.message_handler(func=lambda message: user_data.get(message.from_user.id, {}).get('step') == 'waiting_payment_amount')
 def handle_payment_input(message):
@@ -465,6 +551,14 @@ def echo_all(message):
 # Запуск бота
 if __name__ == '__main__':
     print("✅ Бот запущен и готов к работе!")
+
+    bot.set_my_commands([
+        types.BotCommand("/start", "Начало работы"),
+        types.BotCommand("/profile", "Мой финансовый профиль"),
+        types.BotCommand("/help", "Помощь и список команд"),
+        types.BotCommand("/finance", "Финансовые команды")
+    ])
+
     print("⏳ Ожидаем сообщения...")
     
     try:

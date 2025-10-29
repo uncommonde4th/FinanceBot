@@ -98,11 +98,21 @@ class Database:
         cursor.execute(query, (user_id, debt_amount, debt_amount, annual_rate, months, monthly_payment, total_payment, overpayment))
         self.conn.commit()
         return cursor.lastrowid 
-    
+
+    def delete_credit(self, credit_id, user_id):
+        """Удаляет кредит пользователя"""
+        query = "DELETE FROM credits WHERE id = ? AND user_id = ?"
+        cursor = self.conn.cursor()
+        cursor.execute(query, (credit_id, user_id))
+        self.conn.commit()
+        success = cursor.rowcount > 0
+        cursor.close()
+        return success
+
     def get_user_credits(self, user_id):
         query = """
         SELECT * FROM credits 
-        WHERE user_id = ? AND current_debt > 0 
+        WHERE user_id = ? 
         ORDER BY created_at DESC
         """
         cursor = self.conn.execute(query, (user_id,))
