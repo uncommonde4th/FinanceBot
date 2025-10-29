@@ -1,45 +1,43 @@
-import telebot
-from telebot import types
-from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
-import requests
 import os
-from dotenv import load_dotenv
 import json
-import time
+import telebot
+from dotenv import load_dotenv
+from telebot import types
+from database import Database
 
-
+# Загружаем переменные из .env файла
 load_dotenv()
 
+# Получаем токен бота
 BOT_TOKEN = os.getenv('BOT_TOKEN')
-
 if not BOT_TOKEN:
-    raise ValueError("BOT_TOKEN не найден, проверьте .env")
+    raise ValueError("❌ BOT_TOKEN не найден! Проверьте файл .env")
 
+# Загружаем сообщения из JSON
 def load_messages():
     try:
         with open('data/messages.json', 'r', encoding='utf-8') as f:
             return json.load(f)
     except FileNotFoundError:
-        print("message.json не найден")
+        print("❌ Файл messages.json не найден!")
         return {}
     except json.JSONDecodeError:
-        print("Ошибка в формате messages.json")
+        print("❌ Ошибка в формате messages.json!")
         return {}
 
+# Загружаем сообщения при старте
 MESSAGES = load_messages()
 
+# Создаем экземпляр бота и базы данных
 bot = telebot.TeleBot(BOT_TOKEN)
+db = Database()
 
+# Хранилище временных данных пользователей
 user_data = {}
 
+# Функция для расчета аннуитетного платежа
 def calculate_credit_payment(debt, annual_rate, months):
-    """
-    Расчет ежемесячного платежа по аннуитетной схеме
-    debt - сумма долга
-    annual_rate - годовая процентная ставка
-    months - срок в месяцах
-    """
-    monthly_rate = annual_rate / 100 / 12  # Месячная ставка
+    monthly_rate = annual_rate / 100 / 12
     coefficient = (monthly_rate * (1 + monthly_rate) ** months) / ((1 + monthly_rate) ** months - 1)
     monthly_payment = debt * coefficient
     total_payment = monthly_payment * months
@@ -48,50 +46,305 @@ def calculate_credit_payment(debt, annual_rate, months):
     return {
         'monthly_payment': round(monthly_payment, 2),
         'total_payment': round(total_payment, 2),
-        'overpayment': round(overpayment, 2),
-        'debt': debt,
-        'annual_rate': annual_rate,
-        'months': months
+        'overpayment': round(overpayment, 2)
     }
 
+# Функция для расчета распределения платежа
+def calculate_payment_distribution(current_debt, annual_rate, payment_amount):
+    monthly_rate = annual_rate / 100 / 12
+    interest_amount = current_debt * monthly_rate
+    interest_amount = round(interest_amount, 2)
+    
+    if payment_amount >= interest_amount:
+        principal_amount = payment_amount - interest_amount
+        principal_amount = round(principal_amount, 2)
+        remaining_debt = current_debt - principal_amount
+        remaining_debt = max(0, round(remaining_debt, 2))
+    else:
+        principal_amount = 0
+        remaining_debt = current_debt - payment_amount + interest_amount
+        remaining_debt = round(remaining_debt, 2)
+    
+    return {
+        'interest_amount': interest_amount,
+        'principal_amount': principal_amount,
+        'remaining_debt': remaining_debt
+    }
 
+# Функция для создания клавиатуры профиля
+def create_profile_keyboard():
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    btn_add_credit = types.InlineKeyboardButton('💳 Добавить кредит', callback_data='add_credit')
+    btn_make_payment = types.InlineKeyboardButton('💰 Платеж по кредиту', callback_data='make_payment')
+    btn_add_investment = types.InlineKeyboardButton('📈 Добавить вклад', callback_data='add_investment')
+    markup.add(btn_add_credit, btn_make_payment, btn_add_investment)
+    return markup
+
+# Функция для создания клавиатуры выбора кредита
+def create_credits_keyboard(user_id):
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    user_credits = db.get_user_credits(user_id)
+    
+    for credit in user_credits:
+        credit_id, _, debt, current_debt, rate, months, months_paid, monthly_pay, _, _, created_at = credit
+        btn_text = f"💳 {debt:,.0f}₽ под {rate}% ({current_debt:,.0f}₽ осталось)"
+        markup.add(types.InlineKeyboardButton(btn_text, callback_data=f'select_credit_{credit_id}'))
+    
+    if not user_credits:
+        markup.add(types.InlineKeyboardButton('❌ Нет активных кредитов', callback_data='no_credits'))
+    
+    markup.add(types.InlineKeyboardButton('🔙 Назад к профилю', callback_data='back_to_profile'))
+    return markup
+
+# Функция для создания клавиатуры суммы платежа
+def create_payment_keyboard(monthly_payment, current_debt):
+    markup = types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
+    
+    # Быстрые кнопки с рекомендуемыми суммами (ИСПРАВЛЕНО форматирование)
+    btn_minimum = types.KeyboardButton(f'{monthly_payment:,.0f}'.replace(',', ' ') + ' ₽')
+    btn_half = types.KeyboardButton(f'{monthly_payment * 1.5:,.0f}'.replace(',', ' ') + ' ₽')
+    btn_double = types.KeyboardButton(f'{monthly_payment * 2:,.0f}'.replace(',', ' ') + ' ₽')
+    btn_full = types.KeyboardButton(f'{current_debt:,.0f}'.replace(',', ' ') + ' ₽')
+    
+    markup.add(btn_minimum, btn_half, btn_double, btn_full)
+    return markup
+# Функция для отображения профиля пользователя
+def show_user_profile(chat_id, user_id, message_id=None):
+    user_credits = db.get_user_credits(user_id)
+    username = bot.get_chat(user_id).username
+    display_name = f"@{username}" if username else f"{bot.get_chat(user_id).first_name or 'Пользователь'}"
+    
+    if user_credits:
+        credits_info = ""
+        total_monthly_payment = 0
+        total_current_debt = 0
+        
+        for credit in user_credits:
+            credit_id, _, initial_debt, current_debt, rate, total_months, months_paid, monthly_pay, total_pay, overpay, created_at = credit
+            
+            # Расчет распределения следующего платежа
+            next_payment = calculate_payment_distribution(current_debt, rate, monthly_pay)
+            remaining_months = total_months - months_paid
+            
+            credits_info += f"""
+💳 *Кредит {initial_debt:,.0f} ₽ под {rate}%*
+• Текущий долг: {current_debt:,.0f} ₽
+• Платеж: {monthly_pay:,.0f} ₽/мес
+• Из них: 
+  ├ Проценты: ~{next_payment['interest_amount']:,.0f} ₽
+  └ Основной долг: ~{next_payment['principal_amount']:,.0f} ₽
+• Осталось месяцев: {remaining_months}
+• Оплачено: {months_paid} из {total_months} месяцев
+"""
+            total_monthly_payment += monthly_pay
+            total_current_debt += current_debt
+        
+        credits_summary = f"📊 Всего кредитов: {len(user_credits)}\n💵 Общий долг: {total_current_debt:,.0f} ₽\n📅 Сумма платежей: {total_monthly_payment:,.0f} ₽/мес\n{credits_info}"
+        
+        profile_text = MESSAGES.get('profile_with_data', '').format(
+            username=display_name,
+            credits_info=credits_summary
+        )
+    else:
+        profile_text = MESSAGES.get('profile_empty', '').format(username=display_name)
+    
+    keyboard = create_profile_keyboard()
+    
+    if message_id:
+        bot.edit_message_text(
+            chat_id=chat_id,
+            message_id=message_id,
+            text=profile_text,
+            parse_mode='Markdown',
+            reply_markup=keyboard
+        )
+    else:
+        bot.send_message(
+            chat_id,
+            profile_text,
+            parse_mode='Markdown',
+            reply_markup=keyboard
+        )
+
+# Обработчик команды /start
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
+    user_id = message.from_user.id
+    db.get_or_create_user(
+        user_id,
+        message.from_user.username,
+        message.from_user.first_name,
+        message.from_user.last_name
+    )
+    
     text = MESSAGES.get('start_message', 'Сообщение не найдено')
     bot.reply_to(message, text, parse_mode='Markdown')
 
-@bot.message_handler(commands=['help'])
-def send_help(message):
-    text = MESSAGES.get('help_message', 'Сообщение не найдено')
-    bot.reply_to(message, text, parse_mode='Markdown')
-
-
-# Обработчик команды /creditcard
-@bot.message_handler(commands=['creditcard'])
-def start_credit_calculation(message):
+# Обработчик команды /profile
+@bot.message_handler(commands=['profile'])
+def show_profile(message):
+    user_id = message.from_user.id
     chat_id = message.chat.id
-    user_data[chat_id] = {'step': 'waiting_debt'}
     
-    text = MESSAGES.get('creditcard_welcome', 'Введите сумму долга:')
-    bot.send_message(chat_id, text, parse_mode='Markdown')
+    db.get_or_create_user(
+        user_id,
+        message.from_user.username,
+        message.from_user.first_name,
+        message.from_user.last_name
+    )
+    
+    show_user_profile(chat_id, user_id)
 
-# Обработчик ввода суммы долга
-@bot.message_handler(func=lambda message: user_data.get(message.chat.id, {}).get('step') == 'waiting_debt')
-def handle_debt_input(message):
+# Обработчик нажатий на inline кнопки
+@bot.callback_query_handler(func=lambda call: True)
+def handle_callback(call):
+    chat_id = call.message.chat.id
+    user_id = call.from_user.id
+    message_id = call.message.message_id
+    
+    if call.data == 'add_credit':
+        user_data[user_id] = {
+            'step': 'waiting_credit_debt',
+            'profile_message_id': message_id
+        }
+        
+        text = "💳 *Добавление нового кредита*\n\nВведите сумму кредита:"
+        bot.send_message(chat_id, text, parse_mode='Markdown')
+        
+    elif call.data == 'make_payment':
+        # Показываем список кредитов для платежа
+        user_credits = db.get_user_credits(user_id)
+        if not user_credits:
+            bot.answer_callback_query(call.id, "❌ У вас нет активных кредитов!")
+            return
+        
+        text = MESSAGES.get('select_credit_for_payment', 'Выберите кредит:')
+        keyboard = create_credits_keyboard(user_id)
+        bot.edit_message_text(
+            chat_id=chat_id,
+            message_id=message_id,
+            text=text,
+            parse_mode='Markdown',
+            reply_markup=keyboard
+        )
+        
+    elif call.data.startswith('select_credit_'):
+        credit_id = int(call.data.split('_')[2])
+        credit = db.get_credit_by_id(credit_id, user_id)
+        
+        if credit:
+            credit_id, _, initial_debt, current_debt, rate, months, months_paid, monthly_pay, total_pay, overpay, created_at = credit
+            
+            user_data[user_id] = {
+                'step': 'waiting_payment_amount',
+                'selected_credit_id': credit_id,
+                'current_debt': current_debt,
+                'monthly_payment': monthly_pay,
+                'annual_rate': rate,
+                'profile_message_id': message_id
+            }
+            
+            text = MESSAGES.get('enter_payment_amount', '').format(
+                current_debt=current_debt,
+                monthly_payment=monthly_pay
+            )
+            
+            keyboard = create_payment_keyboard(monthly_pay, current_debt)
+            bot.send_message(chat_id, text, parse_mode='Markdown', reply_markup=keyboard)
+        else:
+            bot.answer_callback_query(call.id, "❌ Кредит не найден!")
+            
+    elif call.data == 'back_to_profile':
+        show_user_profile(chat_id, user_id, message_id)
+        
+    elif call.data == 'add_investment':
+        bot.answer_callback_query(call.id, "📈 Функция вкладов скоро будет доступна!")
+
+# Обработчик ввода суммы платежа
+@bot.message_handler(func=lambda message: user_data.get(message.from_user.id, {}).get('step') == 'waiting_payment_amount')
+def handle_payment_input(message):
+    user_id = message.from_user.id
+    chat_id = message.chat.id
+    
+    try:
+        # ИСПРАВЛЕННОЕ извлечение числа - учитываем запятые как разделители тысяч
+        payment_text = message.text.replace('₽', '').replace(' ', '').strip()
+        
+        # Заменяем запятые на точки для дробных чисел, но сохраняем запятые как разделители тысяч
+        if '.' in payment_text:
+            # Если есть точка, считаем что это десятичный разделитель
+            payment_amount = float(payment_text.replace(',', ''))
+        else:
+            # Если нет точки, убираем запятые и преобразуем
+            payment_amount = float(payment_text.replace(',', '.'))
+        
+        if payment_amount <= 0:
+            bot.send_message(chat_id, "❌ Сумма платежа должна быть положительной!")
+            return
+        
+        # Остальной код без изменений...
+        user_data_entry = user_data[user_id]
+        current_debt = user_data_entry['current_debt']
+        monthly_payment = user_data_entry['monthly_payment']
+        annual_rate = user_data_entry['annual_rate']
+        credit_id = user_data_entry['selected_credit_id']
+        profile_message_id = user_data_entry['profile_message_id']
+        
+        if payment_amount > current_debt + (current_debt * annual_rate / 100 / 12):
+            bot.send_message(chat_id, "❌ Сумма платежа слишком большая!")
+            return
+        
+        # Расчет распределения платежа
+        distribution = calculate_payment_distribution(current_debt, annual_rate, payment_amount)
+        
+        # Сохраняем платеж в базу
+        db.add_payment(
+            credit_id=credit_id,
+            user_id=user_id,
+            payment_amount=payment_amount,
+            principal_amount=distribution['principal_amount'],
+            interest_amount=distribution['interest_amount'],
+            remaining_debt=distribution['remaining_debt']
+        )
+        
+        # Показываем результат
+        response = MESSAGES.get('payment_success', '').format(
+            payment_amount=payment_amount,
+            interest_amount=distribution['interest_amount'],
+            principal_amount=distribution['principal_amount'],
+            remaining_debt=distribution['remaining_debt']
+        )
+        
+        # Убираем клавиатуру
+        remove_markup = types.ReplyKeyboardRemove()
+        bot.send_message(chat_id, response, parse_mode='Markdown', reply_markup=remove_markup)
+        
+        # Обновляем профиль
+        show_user_profile(chat_id, user_id, profile_message_id)
+        
+        # Очищаем временные данные
+        del user_data[user_id]
+        
+    except ValueError:
+        bot.send_message(chat_id, "❌ Пожалуйста, введите корректную сумму (например: 5000, 5.000 или 5,000)")# [Остальные обработчики остаются без изменений - add_credit, help, finance, etc.]
+
+# Обработчик ввода суммы кредита
+@bot.message_handler(func=lambda message: user_data.get(message.from_user.id, {}).get('step') == 'waiting_credit_debt')
+def handle_credit_debt_input(message):
+    user_id = message.from_user.id
     chat_id = message.chat.id
     
     try:
         debt = float(message.text.replace(',', '.').replace(' ', ''))
         if debt <= 0:
-            bot.send_message(chat_id, "❌ Сумма долга должна быть положительной!")
+            bot.send_message(chat_id, "❌ Сумма кредита должна быть положительной!")
             return
         
-        user_data[chat_id]['debt'] = debt
-        user_data[chat_id]['step'] = 'waiting_interest'
+        user_data[user_id]['debt'] = debt
+        user_data[user_id]['step'] = 'waiting_credit_interest'
         
-        text = MESSAGES.get('creditcard_interest', 'Введите процентную ставку:')
+        text = "📊 Введите годовую процентную ставку (%):"
         
-        # Создаем клавиатуру с кнопками процентов
         markup = types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
         btn30 = types.KeyboardButton('30%')
         btn40 = types.KeyboardButton('40%')
@@ -102,15 +355,15 @@ def handle_debt_input(message):
         bot.send_message(chat_id, text, parse_mode='Markdown', reply_markup=markup)
         
     except ValueError:
-        bot.send_message(chat_id, "❌ Пожалуйста, введите корректную сумму (например: 50000 или 50.000)")
+        bot.send_message(chat_id, "❌ Пожалуйста, введите корректную сумму")
 
-# Обработчик ввода процентной ставки
-@bot.message_handler(func=lambda message: user_data.get(message.chat.id, {}).get('step') == 'waiting_interest')
-def handle_interest_input(message):
+# Обработчик ввода процентной ставки для кредита
+@bot.message_handler(func=lambda message: user_data.get(message.from_user.id, {}).get('step') == 'waiting_credit_interest')
+def handle_credit_interest_input(message):
+    user_id = message.from_user.id
     chat_id = message.chat.id
     
     try:
-        # Убираем символ % если есть и преобразуем в число
         interest_text = message.text.replace('%', '').replace(',', '.').strip()
         interest = float(interest_text)
         
@@ -118,12 +371,11 @@ def handle_interest_input(message):
             bot.send_message(chat_id, "❌ Процентная ставка должна быть положительной!")
             return
         
-        user_data[chat_id]['interest'] = interest
-        user_data[chat_id]['step'] = 'waiting_months'
+        user_data[user_id]['interest'] = interest
+        user_data[user_id]['step'] = 'waiting_credit_months'
         
-        text = MESSAGES.get('creditcard_months', 'Выберите срок погашения:')
+        text = "⏱️ Выберите срок погашения (в месяцах):"
         
-        # Создаем клавиатуру с кнопками сроков
         markup = types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
         btn6 = types.KeyboardButton('6 месяцев')
         btn12 = types.KeyboardButton('12 месяцев')
@@ -134,15 +386,15 @@ def handle_interest_input(message):
         bot.send_message(chat_id, text, parse_mode='Markdown', reply_markup=markup)
         
     except ValueError:
-        bot.send_message(chat_id, "❌ Пожалуйста, введите корректную процентную ставку (например: 40 или 40%)")
+        bot.send_message(chat_id, "❌ Пожалуйста, введите корректную процентную ставку")
 
-# Обработчик ввода срока погашения
-@bot.message_handler(func=lambda message: user_data.get(message.chat.id, {}).get('step') == 'waiting_months')
-def handle_months_input(message):
+# Обработчик ввода срока погашения кредита
+@bot.message_handler(func=lambda message: user_data.get(message.from_user.id, {}).get('step') == 'waiting_credit_months')
+def handle_credit_months_input(message):
+    user_id = message.from_user.id
     chat_id = message.chat.id
     
     try:
-        # Извлекаем число из текста (например: "12 месяцев" -> 12)
         months_text = message.text
         months = int(''.join(filter(str.isdigit, months_text)))
         
@@ -150,49 +402,74 @@ def handle_months_input(message):
             bot.send_message(chat_id, "❌ Срок должен быть положительным!")
             return
         
-        # Получаем данные пользователя
-        debt = user_data[chat_id]['debt']
-        interest = user_data[chat_id]['interest']
+        debt = user_data[user_id]['debt']
+        interest = user_data[user_id]['interest']
+        profile_message_id = user_data[user_id]['profile_message_id']
         
-        # Производим расчет
         result = calculate_credit_payment(debt, interest, months)
         
-        # Форматируем результат
+        # Сохраняем кредит в базу данных
+        db.add_credit(
+            user_id=user_id,
+            debt_amount=debt,
+            annual_rate=interest,
+            months=months,
+            monthly_payment=result['monthly_payment'],
+            total_payment=result['total_payment'],
+            overpayment=result['overpayment']
+        )
+        
         response = f"""
-💳 *Результат расчета:*
+✅ *Кредит успешно добавлен!*
 
-📊 *Исходные данные:*
-• Сумма долга: {result['debt']:,.0f} ₽
-• Годовая ставка: {result['annual_rate']}%
-• Срок погашения: {result['months']} месяцев
-
-💰 *Результаты:*
-• 📅 Ежемесячный платеж: *{result['monthly_payment']:,.0f} ₽*
-• 💵 Общая переплата: *{result['overpayment']:,.0f} ₽*
-• 💰 Всего к оплате: *{result['total_payment']:,.0f} ₽*
-
-💡 *Совет:* Старайтесь погашать кредитку досрочно, чтобы уменьшить переплату!
-        """.replace(',', ' ')  # Убираем запятые для лучшего отображения
+📊 *Данные кредита:*
+• Сумма: {debt:,.0f} ₽
+• Ставка: {interest}%
+• Срок: {months} месяцев
+• Ежемесячный платеж: *{result['monthly_payment']:,.0f} ₽*
+• Переплата: *{result['overpayment']:,.0f} ₽*
+        """.replace(',', ' ')
         
-        # Убираем клавиатуру
         remove_markup = types.ReplyKeyboardRemove()
-        
         bot.send_message(chat_id, response, parse_mode='Markdown', reply_markup=remove_markup)
         
-        # Очищаем данные пользователя
-        del user_data[chat_id]
+        # Обновляем профиль
+        show_user_profile(chat_id, user_id, profile_message_id)
+        
+        del user_data[user_id]
         
     except ValueError:
-        bot.send_message(chat_id, "❌ Пожалуйста, введите корректный срок (например: 12 или '12 месяцев')")
+        bot.send_message(chat_id, "❌ Пожалуйста, введите корректный срок")
 
-@bot.message_handler(func=lambda message: True)
-def echo_all(message):
-    text = MESSAGES.get('echo_all_message', 'Сообщение не найдено')
+# Обработчик команды /help
+@bot.message_handler(commands=['help'])
+def send_help(message):
+    text = MESSAGES.get('help_message', 'Сообщение не найдено')
     bot.reply_to(message, text, parse_mode='Markdown')
 
+# Обработчик команды /finance
+@bot.message_handler(commands=['finance'])
+def send_finance_commands(message):
+    text = MESSAGES.get('finance_message', 'Сообщение не найдено')
+    bot.reply_to(message, text, parse_mode='Markdown')
+
+# Обработчик обычных текстовых сообщений
+@bot.message_handler(func=lambda message: True)
+def echo_all(message):
+    chat_id = message.chat.id
+    user_id = message.from_user.id
+    
+    if user_id not in user_data:
+        bot.reply_to(message, "🤔 Используйте /help для списка команд или /profile для просмотра вашего профиля")
+
+# Запуск бота
 if __name__ == '__main__':
-    print("Successfully started")
+    print("✅ Бот запущен и готов к работе!")
+    print("⏳ Ожидаем сообщения...")
+    
     try:
         bot.polling(none_stop=True, interval=0)
     except Exception as e:
-        print(f'Error: {e}')
+        print(f"❌ Ошибка: {e}")
+    finally:
+        db.close()
