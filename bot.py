@@ -35,6 +35,15 @@ def send_welcome(message):
     text = MESSAGES.get('start_message', 'Сообщение не найдено')
     bot.reply_to(message, text, parse_mode='Markdown')
 
+@bot.message_handler(commands=['help'])
+def send_help(message):
+    text = MESSAGES.get('help_message', 'Сообщение не найдено')
+    bot.reply_to(message, text, parse_mode='Markdown')
+
+@bot.message_handler(func=lambda message: True)
+def echo_all(message):
+    text = MESSAGES.get('echo_all_message', 'Сообщение не найдено')
+    bot.reply_to(message, text, parse_mode='Markdown')
 
 if __name__ == '__main__':
     print("Successfully started")
