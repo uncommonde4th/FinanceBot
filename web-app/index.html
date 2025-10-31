@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Финансовый помощник</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <h1>💸 Финансовый помощник</h1>
+            <div class="user-info" id="userInfo">
+                Загрузка...
+            </div>
+        </header>
+
+        <main class="main">
+            <!-- Вкладки -->
+            <div class="tabs">
+                <button class="tab-button active" onclick="openTab('credits')">💳 Кредиты</button>
+                <button class="tab-button" onclick="openTab('investments')">📈 Вклады</button>
+                <button class="tab-button" onclick="openTab('profile')">👤 Профиль</button>
+            </div>
+
+            <!-- Вкладка кредитов -->
+            <div id="credits" class="tab-content active">
+                <div class="section">
+                    <h2>Мои кредиты</h2>
+                    <div id="creditsList" class="credits-list">
+                        <!-- Список кредитов будет здесь -->
+                    </div>
+                    <button class="btn-primary" onclick="showAddCreditForm()">+ Добавить кредит</button>
+                </div>
+
+                <div id="addCreditForm" class="form-container hidden">
+                    <h3>Добавить кредит</h3>
+                    <form onsubmit="addCredit(event)">
+                        <input type="number" id="debtAmount" placeholder="Сумма кредита" required>
+                        <input type="number" id="interestRate" placeholder="Процентная ставка" step="0.1" required>
+                        <input type="number" id="loanTerm" placeholder="Срок (месяцев)" required>
+                        <div class="form-buttons">
+                            <button type="submit" class="btn-primary">Рассчитать</button>
+                            <button type="button" class="btn-secondary" onclick="hideAddCreditForm()">Отмена</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Вкладка профиля -->
+            <div id="profile" class="tab-content">
+                <div class="section">
+                    <h2>Финансовая статистика</h2>
+                    <div class="stats">
+                        <div class="stat-card">
+                            <h3>Общий долг</h3>
+                            <p id="totalDebt">0 ₽</p>
+                        </div>
+                        <div class="stat-card">
+                            <h3>Ежемесячные платежи</h3>
+                            <p id="monthlyPayments">0 ₽</p>
+                        </div>
+                        <div class="stat-card">
+                            <h3>Переплата</h3>
+                            <p id="totalOverpayment">0 ₽</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Вкладка вкладов -->
+            <div id="investments" class="tab-content">
+                <div class="section">
+                    <h2>Мои вклады</h2>
+                    <p>Функция вкладов скоро будет доступна!</p>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
