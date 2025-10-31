@@ -25,6 +25,23 @@ def load_messages():
         print("❌ Ошибка в формате messages.json!")
         return {}
 
+def get_web_app_url():
+    """Определяет URL для Web App в зависимости от окружения"""
+    if os.getenv('DEBUG', 'False').lower() == 'true':
+        # Для локальной разработки используем туннель
+        tunnel_url = os.getenv('TUNNEL_URL')
+        if tunnel_url:
+            return tunnel_url
+        
+        # Если туннель не настроен, используем localhost (для тестов)
+        return "http://localhost:5000"
+    else:
+        # Для продакшена - реальный домен
+        return os.getenv('WEB_APP_URL', 'https://your-domain.com')
+
+# Используйте так:
+web_app_url = get_web_app_url()
+
 # Загружаем сообщения при старте
 MESSAGES = load_messages()
 
@@ -190,15 +207,49 @@ def show_user_profile(chat_id, user_id, message_id=None):
             reply_markup=keyboard
         )
 
-# Обработчик команды /start
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
     user_id = message.from_user.id
+    chat_id = message.chat.id
+    
+    # Регистрируем пользователя
     db.get_or_create_user(
         user_id,
         message.from_user.username,
         message.from_user.first_name,
         message.from_user.last_name
+    )
+    
+    # Устанавливаем кнопку меню для этого чата
+    menu_button = types.MenuButtonWebApp(
+        type="web_app",  # ← ДОБАВЬТЕ ЭТУ СТРОЧКУ
+        text="📱 Финансы",
+        web_app=types.WebAppInfo(url=web_app_url)
+    )
+    
+    try:
+        bot.set_chat_menu_button(
+            chat_id=chat_id,
+            menu_button=menu_button
+        )
+    except Exception as e:
+        print(f"⚠️ Не удалось установить кнопку меню для {chat_id}: {e}")
+    
+    # Отправляем приветственное сообщение с кнопкой
+    markup = types.InlineKeyboardMarkup()
+    web_app_btn = types.InlineKeyboardButton(
+        "🚀 Открыть приложение", 
+        web_app=types.WebAppInfo(url=web_app_url)
+    )
+    markup.add(web_app_btn)
+    
+    welcome_text = MESSAGES.get('start_message', 'Сообщение не найдено') + "\n\n💡 *Используйте кнопку меню слева внизу для быстрого доступа к приложению!*"
+    
+    bot.send_message(
+        chat_id,
+        welcome_text,
+        parse_mode='Markdown',
+        reply_markup=markup
     )
     
     text = MESSAGES.get('start_message', 'Сообщение не найдено')
@@ -548,17 +599,49 @@ def echo_all(message):
     if user_id not in user_data:
         bot.reply_to(message, "🤔 Используйте /help для списка команд или /profile для просмотра вашего профиля")
 
+# Обработчик команды /app
+@bot.message_handler(commands=['app'])
+def send_mini_app(message):
+    markup = types.InlineKeyboardMarkup()
+    web_app_btn = types.InlineKeyboardButton(
+        "📱 Открыть финансовое приложение", 
+        web_app=types.WebAppInfo(url=web_app_url)
+    )
+    markup.add(web_app_btn)
+    
+    bot.send_message(
+        message.chat.id,
+        "💫 *Откройте финансовое приложение для удобного управления:*",
+        parse_mode='Markdown',
+        reply_markup=markup
+    )
+
+
 # Запуск бота
 if __name__ == '__main__':
     print("✅ Бот запущен и готов к работе!")
-
+    
+    # Установка меню команд
     bot.set_my_commands([
-        types.BotCommand("/start", "Начало работы"),
-        types.BotCommand("/profile", "Мой финансовый профиль"),
-        types.BotCommand("/help", "Помощь и список команд"),
-        types.BotCommand("/finance", "Финансовые команды")
+        types.BotCommand("start", "🚀 Начало работы"),
+        types.BotCommand("profile", "📊 Мой профиль"),
+        types.BotCommand("app", "📱 Веб-приложение"),
+        types.BotCommand("help", "❓ Помощь")
     ])
-
+    
+    # Установка кнопки меню для Mini App
+    menu_button = types.MenuButtonWebApp(
+        type="web_app",  # ← ДОБАВЬТЕ ЭТУ СТРОЧКУ
+        text="📱 Финансы",
+        web_app=types.WebAppInfo(url=web_app_url)
+    )
+    
+    try:
+        bot.set_chat_menu_button(menu_button=menu_button)
+        print("✅ Кнопка меню установлена!")
+    except Exception as e:
+        print(f"⚠️ Не удалось установить кнопку меню: {e}")
+    
     print("⏳ Ожидаем сообщения...")
     
     try:
