@@ -4,11 +4,11 @@ import json
 from datetime import datetime
 
 class Database:
-    def __init__(self, db_name='data/finance_bot.db'):
-        os.makedirs('data', exist_ok=True)
-        self.conn = sqlite3.connect(db_name, check_same_thread=False)
-        self.create_tables()
-    
+    def __init__(self, db_path='data/finance_bot.db'):
+        os.makedirs(os.path.dirname(db_path), exist_ok=True)
+        self.conn = sqlite3.connect(db_path, check_same_thread=False)
+        self.create_tables()   
+
     def create_tables(self):
         # Таблица пользователей
         users_query = """
@@ -148,4 +148,21 @@ class Database:
         return []
     
     def close(self):
-        self.conn.close()
+        if self.conn:
+            self.conn.close()
+
+def init_database():
+    """Инициализация БД при первом запуске в Docker"""
+    db_path = 'data/finance_bot.db'
+    
+    if not os.path.exists(db_path):
+        print(f"📦 Инициализирую базу данных: {db_path}")
+        db = Database(db_path)
+        db.close()
+        return True
+    return False
+
+if __name__ == '__main__':
+    # Тест для Docker
+    init_database()
+    print("✅ База данных готова к работе")
