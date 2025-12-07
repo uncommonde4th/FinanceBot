@@ -228,11 +228,11 @@ def send_welcome(message):
     )
     
     # Устанавливаем кнопку меню для этого чата
-    menu_button = types.MenuButtonWebApp(
-        type="web_app",  # ← ДОБАВЬТЕ ЭТУ СТРОЧКУ
-        text="📱 Финансы",
-        web_app=types.WebAppInfo(url=web_app_url)
-    )
+#    menu_button = types.MenuButtonWebApp(
+#        type="web_app",  # ← ДОБАВЬТЕ ЭТУ СТРОЧКУ
+#        text="📱 Финансы",
+#        web_app=types.WebAppInfo(url=web_app_url)
+#    )
     
     try:
         bot.set_chat_menu_button(
@@ -243,14 +243,14 @@ def send_welcome(message):
         print(f"⚠️ Не удалось установить кнопку меню для {chat_id}: {e}")
     
     # Отправляем приветственное сообщение с кнопкой
-    markup = types.InlineKeyboardMarkup()
-    web_app_btn = types.InlineKeyboardButton(
-        "🚀 Открыть приложение", 
-        web_app=types.WebAppInfo(url=web_app_url)
-    )
-    markup.add(web_app_btn)
+#    markup = types.InlineKeyboardMarkup()
+#    web_app_btn = types.InlineKeyboardButton(
+#        "🚀 Открыть приложение", 
+#        web_app=types.WebAppInfo(url=web_app_url)
+#    )
+#    markup.add(web_app_btn)
     
-    welcome_text = MESSAGES.get('start_message', 'Сообщение не найдено') + "\n\n💡 *Используйте кнопку меню слева внизу для быстрого доступа к приложению!*"
+#    welcome_text = MESSAGES.get('start_message', 'Сообщение не найдено') + "\n\n💡 *Используйте кнопку меню слева внизу для быстрого доступа к приложению!*"
     
     bot.send_message(
         chat_id,
@@ -610,17 +610,17 @@ def echo_all(message):
 @bot.message_handler(commands=['app'])
 def send_mini_app(message):
     markup = types.InlineKeyboardMarkup()
-    web_app_btn = types.InlineKeyboardButton(
-        "📱 Открыть финансовое приложение", 
-        web_app=types.WebAppInfo(url=web_app_url)
-    )
-    markup.add(web_app_btn)
+#    web_app_btn = types.InlineKeyboardButton(
+#        "📱 Открыть финансовое приложение", 
+#        web_app=types.WebAppInfo(url=web_app_url)
+#    )
+#    markup.add(web_app_btn)
     
-    bot.send_message(
-        message.chat.id,
-        "💫 *Откройте финансовое приложение для удобного управления:*",
-        parse_mode='Markdown',
-        reply_markup=markup
+#    bot.send_message(
+#        message.chat.id,
+#        "💫 *Откройте финансовое приложение для удобного управления:*",
+#        parse_mode='Markdown',
+##        reply_markup=markup
     )
 
 
@@ -632,16 +632,16 @@ if __name__ == '__main__':
     bot.set_my_commands([
         types.BotCommand("start", "🚀 Начало работы"),
         types.BotCommand("profile", "📊 Мой профиль"),
-        types.BotCommand("app", "📱 Веб-приложение"),
+#       types.BotCommand("app", "📱 Веб-приложение"),
         types.BotCommand("help", "❓ Помощь")
     ])
     
     # Установка кнопки меню для Mini App
-    menu_button = types.MenuButtonWebApp(
-        type="web_app",  # ← ДОБАВЬТЕ ЭТУ СТРОЧКУ
-        text="📱 Финансы",
-        web_app=types.WebAppInfo(url=web_app_url)
-    )
+#    menu_button = types.MenuButtonWebApp(
+#       type="web_app",  # ← ДОБАВЬТЕ ЭТУ СТРОЧКУ
+#       text="📱 Финансы",
+#       web_app=types.WebAppInfo(url=web_app_url)
+#    )
     
     try:
         bot.set_chat_menu_button(menu_button=menu_button)
