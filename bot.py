@@ -28,28 +28,62 @@ def load_messages():
 def get_web_app_url():
     """Определяет URL для Web App в зависимости от окружения"""
     if os.getenv('DEBUG', 'False').lower() == 'true':
-        # Для локальной разработки используем туннель
-        tunnel_url = os.getenv('TUNNEL_URL')
-        if tunnel_url:
-            return tunnel_url
-        
-        # Если туннель не настроен, используем localhost (для тестов)
-        return "http://localhost:5000"
-    else:
-        # Для продакшена - реальный домен
-        return os.getenv('WEB_APP_URL', 'https://your-domain.com')
+   import os
+import json
+import telebot
+from dotenv import load_dotenv
+from telebot import types
 
-# Используйте так:
-web_app_url = get_web_app_url()
+# ЗАГРУЗКА ПЕРЕМЕННЫХ ДЛЯ DOCKER
+load_dotenv()
 
-# Загружаем сообщения при старте
+# Получаем токен
+BOT_TOKEN = os.getenv('BOT_TOKEN')
+if not BOT_TOKEN:
+    raise ValueError("❌ BOT_TOKEN не найден! Проверьте .env файл")
+
+# Импортируем БАЗУ ДАННЫХ ПОСЛЕ загрузки .env
+from database import Database
+
+# Конфиг для Docker
+def get_config():
+    return {
+        'debug': os.getenv('DEBUG', 'False').lower() == 'true',
+        'web_app_url': os.getenv('WEB_APP_URL', 'https://your-domain.com'),
+        'db_path': 'data/finance_bot.db'
+    }
+
+config = get_config()
+
+# Загружаем сообщения
+def load_messages():
+    messages_path = 'data/messages.json'
+    
+    # Если файла нет - создаем минимальный
+    default_messages = {
+        'start_message': '👋 Добро пожаловать!',
+        'help_message': '❓ Доступные команды...',
+        'profile_empty': '📭 Нет активных кредитов'
+    }
+    
+    try:
+        with open(messages_path, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except FileNotFoundError:
+        print(f"⚠️ Файл {messages_path} не найден. Создаю минимальный...")
+        os.makedirs('data', exist_ok=True)
+        with open(messages_path, 'w', encoding='utf-8') as f:
+            json.dump(default_messages, f, ensure_ascii=False, indent=2)
+        return default_messages
+    except json.JSONDecodeError:
+        print(f"❌ Ошибка в {messages_path}. Использую значения по умолчанию")
+        return default_messages
+
 MESSAGES = load_messages()
 
-# Создаем экземпляр бота и базы данных
+# Создаем экземпляры
 bot = telebot.TeleBot(BOT_TOKEN)
-db = Database()
-
-# Хранилище временных данных пользователей
+db = Database(config['db_path'])  # Передаем путь из конфига
 user_data = {}
 
 # Функция для расчета аннуитетного платежа

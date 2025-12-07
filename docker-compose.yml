@@ -1,0 +1,18 @@
+version: '3.8'
+
+services:
+  finance-bot:
+    build: .
+    container_name: finance-telegram-bot
+    restart: unless-stop
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data  # SQLite база и файлы
+    networks:
+      - bot-network
+    # Не нужен depends_on, так как нет других сервисов
+
+networks:
+  bot-network:
+    driver: bridge
