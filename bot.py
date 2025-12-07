@@ -1,34 +1,7 @@
 import os
 import json
 import telebot
-from dotenv import load_dotenv
-from telebot import types
-from database import Database
-
-# Загружаем переменные из .env файла
-load_dotenv()
-
-# Получаем токен бота
-BOT_TOKEN = os.getenv('BOT_TOKEN')
-if not BOT_TOKEN:
-    raise ValueError("❌ BOT_TOKEN не найден! Проверьте файл .env")
-
-# Загружаем сообщения из JSON
-def load_messages():
-    try:
-        with open('data/messages.json', 'r', encoding='utf-8') as f:
-            return json.load(f)
-    except FileNotFoundError:
-        print("❌ Файл messages.json не найден!")
-        return {}
-    except json.JSONDecodeError:
-        print("❌ Ошибка в формате messages.json!")
-        return {}
-
-def get_web_app_url():
-    """Определяет URL для Web App в зависимости от окружения"""
-    if os.getenv('DEBUG', 'False').lower() == 'true':
-   import os
+import os
 import json
 import telebot
 from dotenv import load_dotenv
